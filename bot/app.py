@@ -585,7 +585,7 @@ def main() -> None:
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    main(), outgoing=True))
+    main(outgoing=True)
         async def ping_handler(event):
             if bot_paused:
                 return
