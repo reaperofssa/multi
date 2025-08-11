@@ -70,8 +70,11 @@ class UserSession:
     
     async def setup_handlers(self):
         """Setup message handlers for this client"""
-        @self.client.on(events.NewMessage(pattern=r'^!ping
-    
+
+        @self.client.on(events.NewMessage(pattern=r'^!ping$'))
+        async def handler_ping(event):
+            await event.respond("Pong! 🏓")
+
     async def load_plugins(self):
         """Load plugins for this client"""
         if not os.path.exists(PLUGINS_DIR):
