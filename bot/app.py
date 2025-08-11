@@ -101,7 +101,7 @@ class UserSession:
                 return
             
             try:
-                await event.respond("pong")
+                await event.respond("⛈️ Pong", reply_to=event.id)
                 self.last_ping = datetime.now()
                 logger.info(f"User {self.user_id} (Telegram ID: {event.sender_id}) sent !ping, responded with pong")
             except Exception as e:
