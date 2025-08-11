@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import logging
+import sys
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -11,6 +12,19 @@ from dotenv import load_dotenv
 import importlib
 import importlib.util
 import glob
+
+# Version checks
+try:
+    import telegram
+    print(f"Python Telegram Bot version: {telegram.__version__}")
+    if hasattr(telegram, '__version__'):
+        version_parts = telegram.__version__.split('.')
+        major, minor = int(version_parts[0]), int(version_parts[1])
+        if major < 20:
+            print("⚠️  Warning: This script requires python-telegram-bot >= 20.0")
+except ImportError:
+    print("❌ Error: python-telegram-bot not installed")
+    sys.exit(1)
 
 # Set up logging
 logging.basicConfig(
@@ -23,6 +37,12 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 FORCE_JOIN_CHANNEL = os.getenv("FORCE_JOIN_CHANNEL", "@YourChannelUsername")  # Set your channel here
+
+# Validate BOT_TOKEN
+if not BOT_TOKEN:
+    print("❌ Error: BOT_TOKEN not found in environment variables")
+    print("Please create a .env file with BOT_TOKEN=your_token_here")
+    sys.exit(1)
 
 # Files
 USERS_FILE = "users.json"
@@ -579,25 +599,37 @@ async def post_init(application: Application) -> None:
 
 def main() -> None:
     """Run the bot"""
-    # Create the Application
-    application = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
-    
-    # Add command handlers
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("connect", connect_command))
-    application.add_handler(CommandHandler("replace", replace_command))
-    application.add_handler(CommandHandler("delete", delete_command))
-    application.add_handler(CommandHandler("health", health_command))
-    application.add_handler(CommandHandler("pause", pause_command))
-    application.add_handler(CommandHandler("restart", restart_command))
-    application.add_handler(CommandHandler("help", help_command))
-    
-    # Add message handler for connection process and file uploads
-    application.add_handler(MessageHandler(filters.TEXT | filters.Document.ALL, handle_message))
-    
-    # Run the bot
-    print("🤖 Bot starting...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        # Create the Application with error handling
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        # Add command handlers
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(CommandHandler("connect", connect_command))
+        application.add_handler(CommandHandler("replace", replace_command))
+        application.add_handler(CommandHandler("delete", delete_command))
+        application.add_handler(CommandHandler("health", health_command))
+        application.add_handler(CommandHandler("pause", pause_command))
+        application.add_handler(CommandHandler("restart", restart_command))
+        application.add_handler(CommandHandler("help", help_command))
+        
+        # Add message handler for connection process and file uploads
+        application.add_handler(MessageHandler(filters.TEXT | filters.Document.ALL, handle_message))
+        
+        # Initialize the bot after handlers are added
+        asyncio.get_event_loop().run_until_complete(post_init(application))
+        
+        # Run the bot
+        print("🤖 Bot starting...")
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
+        
+    except Exception as e:
+        print(f"❌ Error starting bot: {e}")
+        print("Please check your BOT_TOKEN and dependencies")
+        return
 
 if __name__ == "__main__":
     main()
