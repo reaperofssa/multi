@@ -586,9 +586,10 @@ def main() -> None:
 
 if __name__ == "__main__":
     main(outgoing=True)
-        async def ping_handler(event):
-            if bot_paused:
-                return
+
+async def ping_handler(event):
+    if bot_paused:
+        return
             
             # Double check this is from the correct user session
             if event.sender_id != (await self.client.get_me()).id:
