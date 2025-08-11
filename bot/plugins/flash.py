@@ -18,18 +18,18 @@ async def setup(client, user_id):
             # Record start time
             start_time = time.time()
             
-            # Send initial message to measure response time
-            sent_msg = await event.respond("⚡️ Calculating speed...")
+            # Reply to the command message
+            sent_msg = await event.reply("⚡️ Calculating speed...")
             
             # Calculate response time
             end_time = time.time()
             response_time_ms = round((end_time - start_time) * 1000)
             
-            # Edit the message with the speed result
-            await sent_msg.edit(f"⚡️ Speed {response_time_ms} Ms")
+            # Edit the reply with the speed result and bot name
+            await sent_msg.edit(f"⚡️ **Finral** Speed {response_time_ms} Ms")
             
         except Exception as e:
-            await event.respond(f"❌ Error: {str(e)}")
+            await event.reply(f"❌ **Finral** Error: {str(e)}")
     
     print(f"✅ Flash plugin loaded for user {user_id}")
 
