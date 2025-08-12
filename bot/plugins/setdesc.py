@@ -26,19 +26,19 @@ async def setup(client, user_id):
 
             # Validate bio
             if not new_bio:
-                await event.edit("❌ Please provide a bio or reply to a message.")
+                await event.reply("❌ Please provide a bio or reply to a message.")
                 return
 
             if len(new_bio) > 70:  # Telegram bio limit
-                await event.edit("❌ Bio too long. Max 70 characters allowed.")
+                await event.reply("❌ Bio too long. Max 70 characters allowed.")
                 return
 
             # Update profile bio
             await client(UpdateProfileRequest(about=new_bio))
-            await event.edit(f"✅ Bio updated to:\n`{new_bio}`")
+            await event.reply(f"✅ Bio updated to:\n`{new_bio}`")
 
         except Exception as e:
-            await event.edit(f"❌ Error: `{str(e)}`")
+            await event.reply(f"❌ Error: `{str(e)}`")
 
     print(f"✅ Set Description plugin loaded for user {user_id}")
 
