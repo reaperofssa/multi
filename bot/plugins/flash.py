@@ -81,13 +81,13 @@ async def setup(client, user_id):
         try:
             start_time = time.time()
 
-            sent_msg = await event.reply("⚡️ Calculating speed...")
+            sent_msg = await event.reply("⚡️ 𝙲𝚊𝚕𝚌𝚞𝚕𝚊𝚝𝚒𝚗𝚐 𝚜𝚙𝚎𝚎𝚍...")
 
             end_time = time.time()
             response_time_ms = round((end_time - start_time) * 1000)
 
             # Use your custom markdown to make the speed a blockquote
-            text = f"⚡️ **Finral** Speed [{response_time_ms} ms](quote)"
+            text = f"[⚡️ **𝙵𝚒𝚗𝚛𝚊𝚕** 𝚂𝚙𝚎𝚎𝚍 {response_time_ms}𝚖𝚜](quote)"
 
             await sent_msg.edit(text)
 
