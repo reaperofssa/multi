@@ -8,6 +8,7 @@ When enabled:
     - Deletes messages from non-contacts ONLY if it's their first time messaging you
 """
 
+import asyncio
 from telethon import events
 
 # Store DM block status for each user session
@@ -59,8 +60,17 @@ async def setup(client, user_id):
         history = await client.get_messages(event.chat_id, limit=2)
         if len(history) == 1:  # This is the only message
             try:
-                await event.delete()  # Delete for you
-                await client.delete_messages(event.chat_id, [event.id], revoke=True)  # Delete for both sides
+                # Send auto-reply
+                reply = await event.respond("🚫 Sorry, my DMs are disabled for new chats. Please contact me in a group.")
+                
+                # Wait 10 seconds before deleting everything
+                await asyncio.sleep(10)
+
+                # Delete their message
+                await client.delete_messages(event.chat_id, [event.id], revoke=True)
+                # Delete our auto-reply
+                await client.delete_messages(event.chat_id, [reply.id], revoke=True)
+
             except Exception as e:
                 print(f"[DM Block Error] {e}")
 
