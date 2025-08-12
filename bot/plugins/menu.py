@@ -35,10 +35,10 @@ async def setup(client, user_id):
                 "━━━━━━━━━━━━━━━━━━━━━━"
             )
 
-            await event.edit(msg, link_preview=False)
+            await event.reply(msg, link_preview=False)
 
         except Exception as e:
-            await event.edit(f"❌ **Finral Error:** `{str(e)}`")
+            await event.reply(f"❌ **Finral Error:** `{str(e)}`")
 
     print(f"✅ Menu plugin loaded for user {user_id}")
 
