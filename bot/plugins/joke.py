@@ -14,13 +14,14 @@ async def setup(client, user_id):
     async def joke_handler(event):
         """Handle !joke command"""
         try:
-            await event.edit("🤣 Fetching a joke...")
+            # Reply to the command message
+            reply_msg = await event.reply("🤣 Fetching a joke...")
 
             # Fetch joke from API
             async with aiohttp.ClientSession() as session:
                 async with session.get("https://official-joke-api.appspot.com/random_joke") as resp:
                     if resp.status != 200:
-                        await event.edit("❌ Failed to fetch joke. Try again later.")
+                        await reply_msg.edit("❌ Failed to fetch joke. Try again later.")
                         return
                     data = await resp.json()
 
@@ -36,10 +37,10 @@ async def setup(client, user_id):
                 "━━━━━━━━━━━━━━━━━━━━━━"
             )
 
-            await event.edit(joke_msg)
+            await reply_msg.edit(joke_msg)
 
         except Exception as e:
-            await event.edit(f"❌ Error: `{str(e)}`")
+            await event.reply(f"❌ Error: `{str(e)}`")
 
     print(f"✅ Joke plugin loaded for user {user_id}")
 
