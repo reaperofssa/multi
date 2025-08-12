@@ -20,12 +20,14 @@ async def setup(client, user_id):
             query = event.pattern_match.group(1).strip()
             encoded_query = urllib.parse.quote(query)
 
-            await event.edit(f"📖 Fetching verse: `{query}`...")
+            # Send a temporary "fetching" reply
+            fetching_msg = await event.reply(f"📖 Fetching verse: `{query}`...")
 
+            # Fetch data from API
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"https://bible-api.com/{encoded_query}") as resp:
                     if resp.status != 200:
-                        await event.edit("❌ Verse not found or API error.")
+                        await fetching_msg.edit("❌ Verse not found or API error.")
                         return
                     data = await resp.json()
 
@@ -34,18 +36,19 @@ async def setup(client, user_id):
             translation = data.get("translation_name", "Unknown Translation")
 
             verse_msg = (
-                "```\n"
-                f"{reference}\n"
-                "------------------------------\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📖 **{reference}**\n"
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"{text}\n"
-                f"({translation})\n"
-                "```"
+                f"_({translation})_\n"
+                "━━━━━━━━━━━━━━━━━━━━━━"
             )
 
-            await event.edit(verse_msg)
+            # Edit the reply with final verse
+            await fetching_msg.edit(verse_msg)
 
         except Exception as e:
-            await event.edit(f"❌ Error: `{str(e)}`")
+            await event.reply(f"❌ Error: `{str(e)}`")
 
     print(f"✅ Bible plugin loaded for user {user_id}")
 
