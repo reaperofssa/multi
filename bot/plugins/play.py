@@ -7,104 +7,57 @@ import os
 import asyncio
 import secrets
 from pydub import AudioSegment
-import wave
 import struct
+from telethon.tl.types import DocumentAttributeAudio
 
 async def setup(client, user_id):
     """Initialize the play plugin"""
-    
+
     def generate_waveform(audio_path):
         """Generate proper waveform data for voice note to avoid dots (...)"""
         try:
-            # Load audio with pydub and ensure good quality
-            audio = AudioSegment.from_file(audio_path)
-            
-            # Normalize audio level first to ensure good amplitude
-            audio = audio.normalize()
-            
-            # Convert to mono if stereo
-            if audio.channels > 1:
-                audio = audio.set_channels(1)
-            
-            # Ensure sample rate is adequate for waveform generation
+            audio = AudioSegment.from_file(audio_path).normalize().set_channels(1)
             if audio.frame_rate < 22050:
                 audio = audio.set_frame_rate(22050)
-            
-            # Get raw audio data
+
             raw_data = audio.raw_data
-            
-            # Convert to samples based on sample width
             if audio.sample_width == 1:
-                # 8-bit unsigned
                 samples = struct.unpack(f'{len(raw_data)}B', raw_data)
-                samples = [(s - 128) * 256 for s in samples]  # Convert to signed 16-bit range
+                samples = [(s - 128) * 256 for s in samples]
             elif audio.sample_width == 2:
-                # 16-bit signed
                 samples = struct.unpack(f'{len(raw_data)//2}h', raw_data)
             elif audio.sample_width == 4:
-                # 32-bit signed
                 samples = struct.unpack(f'{len(raw_data)//4}i', raw_data)
-                samples = [s // 65536 for s in samples]  # Convert to 16-bit range
+                samples = [s // 65536 for s in samples]
             else:
-                # Fallback for other formats
                 samples = struct.unpack(f'{len(raw_data)//2}h', raw_data)
-            
-            # Generate waveform with proper segmentation
-            # Use 100 segments for good visual representation
+
             segment_count = 100
             segment_size = max(1, len(samples) // segment_count)
-            
             waveform_data = []
-            
+
             for i in range(0, len(samples), segment_size):
                 segment = samples[i:i + segment_size]
-                if segment:
-                    # Calculate RMS (Root Mean Square) for better amplitude representation
-                    rms = (sum(s * s for s in segment) / len(segment)) ** 0.5
-                    amplitude = int(rms)
-                else:
-                    amplitude = 0
-                
-                waveform_data.append(amplitude)
-            
-            # Ensure we have exactly 100 points
+                rms = (sum(s * s for s in segment) / len(segment)) ** 0.5 if segment else 0
+                waveform_data.append(int(rms))
+
             if len(waveform_data) > 100:
                 waveform_data = waveform_data[:100]
             elif len(waveform_data) < 100:
-                # Pad with last value or zero
-                last_val = waveform_data[-1] if waveform_data else 0
-                waveform_data.extend([last_val] * (100 - len(waveform_data)))
-            
-            # Normalize to 0-31 range (Telegram's waveform format)
+                waveform_data.extend([waveform_data[-1] if waveform_data else 0] * (100 - len(waveform_data)))
+
             if waveform_data and max(waveform_data) > 0:
                 max_val = max(waveform_data)
-                # Ensure minimum amplitude to avoid dots
-                min_amplitude = 3  # Minimum amplitude to show waveform
-                waveform_data = [max(min_amplitude, int(amp * 31 / max_val)) for amp in waveform_data]
+                min_amp = 3
+                waveform_data = [max(min_amp, int(amp * 31 / max_val)) for amp in waveform_data]
             else:
-                # Generate a realistic waveform pattern if audio is silent
                 import random
                 waveform_data = [random.randint(5, 25) for _ in range(100)]
-            
-            # Ensure all values are in valid range
-            waveform_data = [max(1, min(31, val)) for val in waveform_data]
-            
-            return bytes(waveform_data)
-            
-        except Exception as e:
-            print(f"Waveform generation error: {e}")
-            # Generate a varied realistic waveform as fallback
+
+            return bytes([max(1, min(31, val)) for val in waveform_data])
+        except:
             import random
-            random.seed(42)  # Consistent fallback pattern
-            fallback_waveform = []
-            for i in range(100):
-                # Create a natural-looking waveform pattern
-                base = 15 + int(10 * (0.5 + 0.3 * (i % 20) / 20))
-                variation = random.randint(-5, 5)
-                amplitude = max(3, min(31, base + variation))
-                fallback_waveform.append(amplitude)
-            
-            return bytes(fallback_waveform)
+            return bytes([random.randint(5, 25) for _ in range(100)])
 
     @client.on(events.NewMessage(pattern=r'^!play(?:\s+(.+))?', outgoing=True))
     async def play_handler(event):
@@ -115,137 +68,50 @@ async def setup(client, user_id):
                 return
 
             searching_msg = await event.reply("🎵 Searching...")
-            encoded_query = urllib.parse.quote(query)
-            url = f"https://apis.davidcyriltech.my.id/play?query={encoded_query}"
-            
-            response = requests.get(url, timeout=20)
-            if response.status_code != 200:
-                await searching_msg.edit("❌ API request failed.")
-                return
+            url = f"https://apis.davidcyriltech.my.id/play?query={urllib.parse.quote(query)}"
+            r = requests.get(url, timeout=20)
 
-            data = response.json()
-            if not data.get("status") or "result" not in data:
+            if r.status_code != 200 or not r.json().get("status"):
                 await searching_msg.edit("❌ Song not found.")
                 return
 
-            song = data["result"]
-            download_url = song["download_url"]
-            
-            await searching_msg.edit(f"🎶 **{song['title']}** ({song['duration']})\n👤 {song.get('artist', 'Unknown Artist')}\n⬇️ Downloading...")
+            song = r.json()["result"]
+            mp3_path = f"/tmp/{secrets.token_hex(8)}.mp3"
+            ogg_path = f"/tmp/{secrets.token_hex(8)}.ogg"
 
-            # Download MP3
-            audio_data = requests.get(download_url, stream=True, timeout=30)
-            if audio_data.status_code != 200:
-                await searching_msg.edit("❌ Failed to download audio.")
-                return
+            audio_r = requests.get(song["download_url"], stream=True, timeout=30)
+            with open(mp3_path, "wb") as f:
+                for chunk in audio_r.iter_content(1024):
+                    f.write(chunk)
 
-            # Generate random hex filename
-            random_hex = secrets.token_hex(8)
-            
-            # Create temporary files with random hex names
-            mp3_path = f"/tmp/{random_hex}.mp3"
-            ogg_path = f"/tmp/{random_hex}.ogg"
-            
-            try:
-                # Save MP3 file
-                with open(mp3_path, 'wb') as tmp_mp3:
-                    for chunk in audio_data.iter_content(1024):
-                        tmp_mp3.write(chunk)
+            await searching_msg.edit(f"🔄 Converting **{song['title']}** to voice note...")
 
-                # Check file size before conversion
-                if os.path.getsize(mp3_path) == 0:
-                    await searching_msg.edit("❌ Downloaded file is empty.")
-                    return
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", mp3_path, "-c:a", "libopus", "-b:a", "64k", "-ar", "48000", ogg_path],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
 
-                await searching_msg.edit(f"🎶 **{song['title']}** ({song['duration']})\n👤 {song.get('artist', 'Unknown Artist')}\n🔄 Converting to voice note...")
+            waveform = generate_waveform(mp3_path)
+            duration = int(AudioSegment.from_file(mp3_path).duration_seconds)
 
-                # Convert to OGG with opus codec for voice note
-                ffmpeg_cmd = [
-                    "ffmpeg", "-y", "-i", mp3_path,
-                    "-c:a", "libopus", "-b:a", "64k",
-                    "-ar", "48000",  # Standard sample rate for voice notes
-                    ogg_path
-                ]
-                
-                process = subprocess.run(
-                    ffmpeg_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                
-                if process.returncode != 0:
-                    error_msg = process.stderr.decode(errors="ignore")
-                    if "Unknown encoder 'libopus'" in error_msg:
-                        # Retry with libvorbis
-                        ffmpeg_cmd[4] = "libvorbis"
-                        process = subprocess.run(
-                            ffmpeg_cmd,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE
-                        )
-                        if process.returncode != 0:
-                            raise RuntimeError(process.stderr.decode(errors="ignore"))
-                    else:
-                        raise RuntimeError(error_msg)
+            await searching_msg.delete()
 
-                # Generate waveform
-                waveform = generate_waveform(mp3_path)
-                
-                # Get audio duration in seconds
+            # ✅ Send voice note as reply to the command message
+            await event.reply(
+                f"🎶 **{song['title']}** ({song['duration']})\n🔗 [YouTube]({song['video_url']})",
+                file=ogg_path,
+                voice=True,
+                attributes=[DocumentAttributeAudio(duration=duration, voice=True, waveform=waveform)],
+                parse_mode="md"
+            )
+
+        finally:
+            for path in (mp3_path, ogg_path):
                 try:
-                    audio = AudioSegment.from_file(mp3_path)
-                    duration = int(audio.duration_seconds)
-                except:
-                    duration = 0
-
-                await searching_msg.delete()
-
-                # Send caption first
-                caption_text = f"🎶 **{song['title']}** ({song['duration']})\n🔗 [YouTube]({song['video_url']})"
-                caption_msg = await event.reply(caption_text, parse_mode="md")
-
-                # Send voice note as reply to original command
-                voice_msg = await client.send_file(
-                    event.chat_id,
-                    file=ogg_path,
-                    voice=True,
-                    reply_to=event.id,
-                    attributes=[
-                        client._client.tl.types.DocumentAttributeAudio(
-                            duration=duration,
-                            voice=True,
-                            waveform=waveform
-                        )
-                    ]
-                )
-
-                # Delete caption after 20 seconds
-                async def delete_caption():
-                    await asyncio.sleep(20)
-                    try:
-                        await caption_msg.delete()
-                    except:
-                        pass  # Message might already be deleted
-                
-                # Schedule caption deletion
-                asyncio.create_task(delete_caption())
-
-            finally:
-                # Clean up temporary files
-                try:
-                    if os.path.exists(mp3_path):
-                        os.unlink(mp3_path)
-                    if os.path.exists(ogg_path):
-                        os.unlink(ogg_path)
+                    if os.path.exists(path):
+                        os.remove(path)
                 except:
                     pass
-
-        except Exception as e:
-            try:
-                await searching_msg.delete()
-            except:
-                pass
-            await event.reply(f"⚠️ Error: {str(e)}")
 
     print(f"✅ Play plugin loaded for user {user_id}")
 
