@@ -108,14 +108,15 @@ async def setup(client, user_id):
 
     @client.on(events.NewMessage(pattern=r'^!play(?:\s+(.+))?', outgoing=True))
     async def play_handler(event):
-        try:
-            query = event.pattern_match.group(1)
-            if not query:
-                await event.reply("❌ Please provide a song name after `!play`.")
-                return
+        query = event.pattern_match.group(1)
+        if not query:
+            await event.reply("❌ Please provide a song name after `!play`.")
+            return
 
-            # Show searching message (this will be edited later)
-            status_msg = await event.reply("🎵 Searching...")
+        # Show searching message (this will be edited later)
+        status_msg = await event.reply("🎵 Searching...")
+
+        try:
 
             # API request
             encoded_query = urllib.parse.quote(query)
@@ -215,20 +216,14 @@ async def setup(client, user_id):
             caption_text = f"🎶 **{song['title']}** ({song['duration']})\n🔗 [YouTube]({song['video_url']})"
             caption_msg = await event.reply(caption_text, parse_mode="md")
 
-            # Send voice note as reply to original command
-            await client.send_file(
-                event.chat_id,
-                file=ogg_path,
-                voice=True,
-                reply_to=event.id,
-                attributes=[
-                    client._client.tl.types.DocumentAttributeAudio(
-                        duration=duration,
-                        voice=True,
-                        waveform=waveform
-                    )
-                ]
-            )
+            # Send voice note as reply to original command (without caption since voice notes can't have captions)
+            with open(ogg_path, 'rb') as voice_file:
+                await event.client.send_file(
+                    event.chat_id,
+                    voice_file,
+                    voice=True,
+                    reply_to=event.id
+                )
 
             # Clean up temporary files
             os.unlink(mp3_path)
