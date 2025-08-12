@@ -15,8 +15,10 @@ async def setup(client, user_id):
     async def weather_handler(event):
         """Handle !weather command"""
         try:
-            location = event.pattern_match.group(1)
-            await event.edit(f"⛅ Fetching weather for `{location}`...")
+            location = event.pattern_match.group(1).strip()
+
+            # Reply under the command message
+            reply_msg = await event.reply(f"⛅ Fetching weather for `{location}`...")
 
             encoded_location = urllib.parse.quote(location)
             url = f"https://wttr.in/{encoded_location}?format=j1"
@@ -24,7 +26,7 @@ async def setup(client, user_id):
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
-                        await event.edit("❌ Failed to fetch weather.")
+                        await reply_msg.edit("❌ Failed to fetch weather.")
                         return
                     data = await resp.json()
 
@@ -49,10 +51,10 @@ async def setup(client, user_id):
                 "━━━━━━━━━━━━━━━━━━━━━━"
             )
 
-            await event.edit(msg)
+            await reply_msg.edit(msg)
 
         except Exception as e:
-            await event.edit(f"❌ Error: `{str(e)}`")
+            await event.reply(f"❌ Error: `{str(e)}`")
 
     print(f"✅ Weather plugin loaded for user {user_id}")
 
