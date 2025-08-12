@@ -1,39 +1,52 @@
-from telethon import events
+"""
+TikTok Stalk Plugin for Multi-Session UserBot
+Responds to !tt <username> to get TikTok profile information
+"""
 import aiohttp
-import asyncio
+from telethon import events
 
-async def setup_tiktok(client):
+async def setup(client, user_id):
+    """Initialize the TikTok stalk plugin"""
+    
     @client.on(events.NewMessage(pattern=r'^!tt(?:\s+(\S+))?', outgoing=True))
-    async def tiktok_stalk(event):
+    async def tiktok_handler(event):
         username = event.pattern_match.group(1)
-
         if not username:
             await event.reply("❌ Usage: `!tt <username>`")
             return
 
-        api_url = f"https://apis.davidcyriltech.my.id/tiktokStalk?q={username}"
+        # Show searching message (this will be edited later)
+        status_msg = await event.reply(f"🔍 Fetching TikTok profile for @{username}...")
 
         try:
+            # API request
+            api_url = f"https://apis.davidcyriltech.my.id/tiktokStalk?q={username}"
+            
             async with aiohttp.ClientSession() as session:
-                async with session.get(api_url) as resp:
+                async with session.get(api_url, timeout=20) as resp:
                     if resp.status != 200:
-                        await event.reply(f"⚠️ Failed to fetch data. HTTP {resp.status}")
+                        await status_msg.edit(f"⚠️ Failed to fetch data. HTTP {resp.status}")
                         return
-
+                    
                     data = await resp.json()
 
+            # Validate response
             if not data.get("status") or "data" not in data:
-                await event.reply("❌ No data found for that username.")
+                await status_msg.edit("❌ No data found for that username.")
                 return
 
             user = data["data"]["user"]
             stats = data["data"]["stats"]
 
+            # Extract user information
             nickname = user.get("nickname", "N/A")
             uniqueId = user.get("uniqueId", "N/A")
             bio = user.get("signature", "")
+            
+            # Truncate bio if too long
             if len(bio) > 250:
                 bio = bio[:250] + "..."
+
             followers = stats.get("followerCount", 0)
             following = stats.get("followingCount", 0)
             likes = stats.get("heartCount", 0)
@@ -42,6 +55,7 @@ async def setup_tiktok(client):
             verified = "✅ Yes" if user.get("verified", False) else "❌ No"
             pfp = user.get("avatarLarger")
 
+            # Create caption
             caption = (
                 f"🎵 **TikTok Profile**\n"
                 f"👤 **Nickname:** {nickname}\n"
@@ -55,14 +69,28 @@ async def setup_tiktok(client):
                 f"✔️ **Verified:** {verified}"
             )
 
-            # Send as reply to the original message
+            # Delete status message
+            await status_msg.delete()
+
+            # Send profile with photo or just text
             if pfp:
-                await client.send_file(event.chat_id, pfp, caption=caption, reply_to=event.id)
+                await event.client.send_file(
+                    event.chat_id, 
+                    pfp, 
+                    caption=caption, 
+                    reply_to=event.id
+                )
             else:
                 await event.reply(caption)
 
-        except Exception as e:
-            await event.reply(f"⚠️ Error: `{e}`")
+        except:
+            # Silently fail without sending errors to chat
+            try:
+                await status_msg.delete()
+            except:
+                pass
 
-# Example init
-# await setup_tiktok(client)
+    print(f"✅ TikTok stalk plugin loaded for user {user_id}")
+
+async def init_plugin(client, user_id):
+    await setup(client, user_id)
