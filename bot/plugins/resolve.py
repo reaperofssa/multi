@@ -1,25 +1,13 @@
-"""
-Resolve Mini App Link Plugin for Multi-Session UserBot
-Usage:
-    !resolve [chat_id|me] <t.me mini app link>
-Examples:
-    !resolve me https://t.me/herewalletbot/app_name?startapp=1171603
-    !resolve 123456789 https://t.me/herewalletbot/app_name?startapp=1171603
-    !resolve https://t.me/herewalletbot/app_name?startapp=1171603  (defaults to "me")
-"""
-
 from urllib.parse import urlparse, parse_qs
 from telethon import events
 from telethon.tl.functions.messages import RequestAppWebViewRequest
 from telethon.tl.types import InputBotAppShortName
 
-# Plugin setup function
 async def setup(client, user_id):
     """Initialize the resolve plugin"""
 
     @client.on(events.NewMessage(pattern=r'^!resolve(?:\s+(\S+))?(?:\s+(https?://\S+))?', outgoing=True))
     async def resolve_handler(event):
-        """Handle !resolve command"""
         try:
             args = event.raw_text.split(maxsplit=2)
 
@@ -41,12 +29,14 @@ async def setup(client, user_id):
             # Parse deep link
             parsed = urlparse(deep_link)
             path_parts = parsed.path.strip('/').split('/')
-            if len(path_parts) < 2:
-                await event.edit("❌ Invalid deep link format")
+
+            if len(path_parts) == 0 or not path_parts[0]:
+                await event.edit("❌ Invalid deep link format: missing bot username")
                 return
 
             bot_username = path_parts[0]
-            app_shortname = path_parts[1]
+            app_shortname = path_parts[1] if len(path_parts) > 1 else ""  # empty string if missing
+
             start_param = parse_qs(parsed.query).get("startapp", [""])[0]
 
             # Convert chat ID if not "me"
@@ -56,7 +46,6 @@ async def setup(client, user_id):
                 except ValueError:
                     target_chat = await client.get_input_entity(target_chat)
 
-            # Get real URL from Telegram
             app_info = await client(
                 RequestAppWebViewRequest(
                     target_chat,
@@ -69,15 +58,13 @@ async def setup(client, user_id):
                 )
             )
 
-            # Shortened display version of URL
             full_url = app_info.url
             short_url = full_url if len(full_url) <= 80 else full_url[:80] + "..."
 
-            # Send formatted message
             msg = (
                 "✅ **Resolved Mini App Link**\n"
                 f"**Bot:** `{bot_username}`\n"
-                f"**Short Name:** `{app_shortname}`\n"
+                f"**Short Name:** `{app_shortname or '[default]'}`\n"
                 f"**Start Param:** `{start_param}`\n\n"
                 f"**Real URL:** `{short_url}`\n"
                 f"[🌐 Full URL]({full_url})"
@@ -89,6 +76,5 @@ async def setup(client, user_id):
 
     print(f"✅ Resolve plugin loaded for user {user_id}")
 
-# Alternative initialization method (for compatibility)
 async def init_plugin(client, user_id):
     await setup(client, user_id)
