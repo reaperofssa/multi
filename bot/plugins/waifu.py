@@ -1,22 +1,49 @@
-from telethon import events
+"""
+Waifu Plugin for Multi-Session UserBot
+Responds to !waifu to get random waifu image
+"""
 import aiohttp
+from telethon import events
 
-async def setup_waifu(client):
+async def setup(client, user_id):
+    """Initialize the waifu plugin"""
+    
     @client.on(events.NewMessage(pattern=r'^!waifu$', outgoing=True))
-    async def waifu_cmd(event):
-        api_url = "https://apis.davidcyriltech.my.id/random/waifu"
+    async def waifu_handler(event):
+        # Show searching message (this will be edited later)
+        status_msg = await event.reply("🌸 Getting random waifu...")
 
         try:
+            # API request
+            api_url = "https://apis.davidcyriltech.my.id/random/waifu"
+            
             async with aiohttp.ClientSession() as session:
-                async with session.get(api_url) as resp:
+                async with session.get(api_url, timeout=20) as resp:
                     if resp.status != 200:
-                        await event.reply(f"⚠️ Failed to fetch waifu. HTTP {resp.status}")
+                        await status_msg.edit(f"⚠️ Failed to fetch waifu. HTTP {resp.status}")
                         return
+                    
                     # API returns an image directly
                     image_bytes = await resp.read()
 
-            # Send as a reply to the command message
-            await client.send_file(event.chat_id, image_bytes, reply_to=event.id)
+            # Delete status message
+            await status_msg.delete()
 
-        except Exception as e:
-            await event.reply(f"⚠️ Error: `{e}`")
+            # Send image as a reply to the command message
+            await event.client.send_file(
+                event.chat_id, 
+                image_bytes, 
+                reply_to=event.id
+            )
+
+        except:
+            # Silently fail without sending errors to chat
+            try:
+                await status_msg.delete()
+            except:
+                pass
+
+    print(f"✅ Waifu plugin loaded for user {user_id}")
+
+async def init_plugin(client, user_id):
+    await setup(client, user_id)
