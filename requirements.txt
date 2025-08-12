@@ -7,3 +7,4 @@ psutil
 urllib3>=1.26.0
 pydub>=0.25.0
 asyncio
+audioop-lts
