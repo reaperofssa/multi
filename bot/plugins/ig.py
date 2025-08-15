@@ -59,11 +59,12 @@ async def setup(client, user_id):
             # Delete status message
             await status_msg.delete()
 
-            # Send profile picture with info
+            # Send profile picture as photo
             await event.client.send_file(
                 event.chat_id,
                 profile_pic,
                 caption=caption,
+                force_document=False,  # ensures it’s sent as an image
                 reply_to=event.id
             )
 
