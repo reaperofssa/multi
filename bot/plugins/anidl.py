@@ -6,10 +6,49 @@ import requests
 from telethon import events
 import json
 import logging
+import re
 
 # Set up logging for debugging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+async def resolve_pahe_link(pahe_url):
+    """Resolve Pahe download link to direct MP4 link"""
+    try:
+        resolve_url = f"https://thdump-api.hf.space/resolvex?url={pahe_url}"
+        response = requests.get(resolve_url, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            mp4_link = data.get('mp4Link', '')
+            if mp4_link:
+                logger.info(f"Resolved Pahe link: {pahe_url} -> {mp4_link}")
+                return mp4_link
+        
+        logger.warning(f"Failed to resolve Pahe link: {pahe_url}")
+        return pahe_url  # Return original if resolution fails
+        
+    except Exception as e:
+        logger.error(f"Error resolving Pahe link {pahe_url}: {e}")
+        return pahe_url  # Return original if error occurs
+
+def is_pahe_link(url):
+    """Check if URL is a Pahe download link"""
+    return 'pahe.win' in url or 'pahe.li' in url
+
+async def process_download_links(links_dict, link_type):
+    """Process and resolve download links"""
+    processed_links = {}
+    
+    for quality, url in links_dict.items():
+        if '_download' in quality:  # Only process download links
+            if is_pahe_link(url):
+                resolved_url = await resolve_pahe_link(url)
+                processed_links[quality] = resolved_url
+            else:
+                processed_links[quality] = url
+    
+    return processed_links
 
 async def setup(client, user_id):
     """Initialize the Anime Download plugin"""
@@ -43,7 +82,8 @@ async def setup(client, user_id):
                             return
                         
                         # Format search results for easy copying
-                        result_text = "📺 **Anime Search Results:**\n\n"
+                        result_text = "🔍 **ANIME SEARCH RESULTS**\n"
+                        result_text += "━" * 30 + "\n\n"
                         
                         for anime in search_results[:10]:  # Limit to top 10 results
                             title = anime.get('title', 'Unknown')
@@ -55,10 +95,9 @@ async def setup(client, user_id):
                             
                             # Format with similarity percentage
                             similarity_percent = int(similarity * 100)
-                            result_text += f"**{title}** ({similarity_percent}%)\n"
-                            result_text += f"`!anidl {anime_id}|1`\n\n"
-                        
-                        result_text = result_text.rstrip()  # Remove trailing newlines
+                            result_text += f"📺 **{title}** `({similarity_percent}%)`\n"
+                            result_text += f"📋 `!anidl {anime_id}|1`\n"
+                            result_text += "─" * 25 + "\n"
                         
                         await searching_msg.edit(result_text)
                         
@@ -115,58 +154,57 @@ async def setup(client, user_id):
                         play_url = episode_data.get('playUrl', '')
                         links = episode_data.get('links', {})
                         
-                        # Format caption with download links
-                        caption = f"📺 **Episode {episode_num}**\n\n"
+                        # Update fetching message to show resolving links
+                        await fetching_msg.edit("🔗 Resolving download links...")
                         
-                        if play_url:
-                            caption += f"🎬 **Play URL:** [Watch Online]({play_url})\n\n"
+                        # Format caption with download links
+                        caption = f"📺 **EPISODE {episode_num}**\n"
+                        caption += "━" * 30 + "\n\n"
+                        
+                        has_content = False
                         
                         # Sub links
                         sub_links = links.get('sub', {})
                         if sub_links:
-                            caption += "🔤 **Subtitled:**\n"
+                            # Process and resolve download links
+                            sub_download_links = await process_download_links(sub_links, 'sub')
                             
-                            # Streaming links
-                            if any(k in sub_links for k in ['360p', '720p', '1080p']):
-                                caption += "📺 *Streaming:*\n"
-                                for quality in ['360p', '720p', '1080p']:
-                                    if quality in sub_links:
-                                        caption += f"• [{quality}]({sub_links[quality]})\n"
-                                caption += "\n"
-                            
-                            # Download links
-                            if any(k in sub_links for k in ['360p_download', '720p_download', '1080p_download']):
-                                caption += "⬇️ *Download:*\n"
+                            if sub_download_links:
+                                has_content = True
+                                caption += "🔤 **SUBTITLED VERSION**\n"
+                                caption += "─" * 20 + "\n"
+                                
                                 for quality in ['360p_download', '720p_download', '1080p_download']:
-                                    if quality in sub_links:
-                                        quality_label = quality.replace('_download', '')
-                                        caption += f"• [{quality_label}]({sub_links[quality]})\n"
+                                    if quality in sub_download_links:
+                                        quality_label = quality.replace('_download', '').upper()
+                                        caption += f"⬇️ [{quality_label}]({sub_download_links[quality]})\n"
+                                
                                 caption += "\n"
                         
                         # Dub links
                         dub_links = links.get('dub', {})
                         if dub_links:
-                            caption += "🎤 **Dubbed:**\n"
+                            # Process and resolve download links
+                            dub_download_links = await process_download_links(dub_links, 'dub')
                             
-                            # Streaming links
-                            if any(k in dub_links for k in ['360p', '720p', '1080p']):
-                                caption += "📺 *Streaming:*\n"
-                                for quality in ['360p', '720p', '1080p']:
-                                    if quality in dub_links:
-                                        caption += f"• [{quality}]({dub_links[quality]})\n"
-                                caption += "\n"
-                            
-                            # Download links
-                            if any(k in dub_links for k in ['360p_download', '720p_download', '1080p_download']):
-                                caption += "⬇️ *Download:*\n"
+                            if dub_download_links:
+                                has_content = True
+                                caption += "🎤 **DUBBED VERSION**\n"
+                                caption += "─" * 18 + "\n"
+                                
                                 for quality in ['360p_download', '720p_download', '1080p_download']:
-                                    if quality in dub_links:
-                                        quality_label = quality.replace('_download', '')
-                                        caption += f"• [{quality_label}]({dub_links[quality]})\n"
+                                    if quality in dub_download_links:
+                                        quality_label = quality.replace('_download', '').upper()
+                                        caption += f"⬇️ [{quality_label}]({dub_download_links[quality]})\n"
+                                
                                 caption += "\n"
                         
-                        # Clean up trailing newlines
-                        caption = caption.rstrip()
+                        if not has_content:
+                            caption += "❌ No download links available for this episode.\n\n"
+                        
+                        # Add footer
+                        caption += "━" * 30 + "\n"
+                        caption += "💡 *Click links to download directly*"
                         
                         # Send snapshot image with caption
                         if snapshot:
@@ -183,7 +221,6 @@ async def setup(client, user_id):
                             except Exception as img_error:
                                 logger.warning(f"Failed to send snapshot image: {img_error}")
                                 # Fallback to text message
-                                caption = f"📺 **Episode {episode_num}**\n\n" + caption
                                 await fetching_msg.edit(caption)
                                 return
                         else:
