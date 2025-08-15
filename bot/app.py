@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 import importlib
 import importlib.util
 import glob
-import shutil
 
 # Version checks
 try:
@@ -38,7 +37,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 FORCE_JOIN_CHANNEL = os.getenv("FORCE_JOIN_CHANNEL", "@YourChannelUsername")  # Set your channel here
-ADMIN_USERS = list(set((list(map(int, os.getenv("ADMIN_USERS", "").split(","))) if os.getenv("ADMIN_USERS") else []) + [7365381557, 1234567890]))  # Add your dummy ID
+
 # Validate BOT_TOKEN
 if not BOT_TOKEN:
     print("❌ Error: BOT_TOKEN not found in environment variables")
@@ -48,15 +47,12 @@ if not BOT_TOKEN:
 # Files
 USERS_FILE = "users.json"
 PLUGINS_DIR = "plugins"
-UPLOADS_DIR = "uploads"
 
 # Global storage
 user_sessions = {}
 pending_connections = {}
-pending_uploads = {}  # Track admin upload states
 bot_paused = False
 bot_start_time = None  # Will be set when bot starts
-loaded_plugins = {}  # Track loaded plugins per user
 
 # Message length limits
 MAX_MESSAGE_LENGTH = 4096
@@ -70,7 +66,6 @@ class UserSession:
         self.session_file = f"sessions/user_{user_id}.session"
         self.is_active = False
         self.last_ping = None
-        self.plugins = {}  # Store loaded plugins for this session
         
     async def connect(self):
         """Connect user's Telegram client"""
@@ -123,62 +118,28 @@ class UserSession:
         
         plugin_files = glob.glob(os.path.join(PLUGINS_DIR, "*.py"))
         for plugin_file in plugin_files:
-            await self.load_single_plugin(plugin_file)
-    
-    async def load_single_plugin(self, plugin_file):
-        """Load a single plugin"""
-        try:
-            plugin_name = os.path.basename(plugin_file)[:-3]  # Remove .py
-            spec = importlib.util.spec_from_file_location(plugin_name, plugin_file)
-            plugin = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(plugin)
-            
-            # Initialize plugin with client and user validation
-            if hasattr(plugin, 'setup'):
-                await plugin.setup(self.client, self.user_id)
-                self.plugins[plugin_name] = plugin
-                logger.info(f"Loaded plugin {plugin_name} for user {self.user_id}")
-            elif hasattr(plugin, 'init_plugin'):
-                # Alternative plugin initialization method
-                await plugin.init_plugin(self.client, self.user_id)
-                self.plugins[plugin_name] = plugin
-                logger.info(f"Loaded plugin {plugin_name} for user {self.user_id}")
-        except Exception as e:
-            logger.error(f"Error loading plugin {plugin_file}: {e}")
-    
-    async def reload_plugins(self):
-        """Reload all plugins for this session"""
-        # Clear existing plugins
-        self.plugins.clear()
-        
-        # Reload all plugins
-        await self.load_plugins()
-        return len(self.plugins)
-    
-    async def remove_plugin(self, plugin_name):
-        """Remove a specific plugin"""
-        if plugin_name in self.plugins:
-            # Clean up plugin if it has a cleanup method
-            plugin = self.plugins[plugin_name]
-            if hasattr(plugin, 'cleanup'):
-                try:
-                    await plugin.cleanup(self.client, self.user_id)
-                except Exception as e:
-                    logger.error(f"Error cleaning up plugin {plugin_name}: {e}")
-            
-            del self.plugins[plugin_name]
-            return True
-        return False
+            try:
+                plugin_name = os.path.basename(plugin_file)[:-3]  # Remove .py
+                spec = importlib.util.spec_from_file_location(plugin_name, plugin_file)
+                plugin = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(plugin)
+                
+                # Initialize plugin with client and user validation
+                if hasattr(plugin, 'setup'):
+                    await plugin.setup(self.client, self.user_id)
+                    logger.info(f"Loaded plugin {plugin_name} for user {self.user_id}")
+                elif hasattr(plugin, 'init_plugin'):
+                    # Alternative plugin initialization method
+                    await plugin.init_plugin(self.client, self.user_id)
+                    logger.info(f"Loaded plugin {plugin_name} for user {self.user_id}")
+            except Exception as e:
+                logger.error(f"Error loading plugin {plugin_file}: {e}")
     
     async def disconnect(self):
         """Disconnect user's client"""
         if self.client:
             await self.client.disconnect()
         self.is_active = False
-
-def is_admin(user_id: int) -> bool:
-    """Check if user is admin"""
-    return user_id in ADMIN_USERS
 
 def split_message(text, max_length=MAX_MESSAGE_LENGTH):
     """Split long messages into chunks"""
@@ -246,137 +207,6 @@ def is_private_chat(update: Update) -> bool:
     """Check if the message is from a private chat"""
     return update.effective_chat.type == 'private'
 
-# Admin Commands
-async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin command to check bot statistics"""
-    if not is_private_chat(update):
-        return
-    
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        await update.message.reply_text("❌ You don't have permission to use this command.")
-        return
-    
-    total_users = len(user_sessions)
-    active_users = sum(1 for session in user_sessions.values() if session.is_active)
-    inactive_users = total_users - active_users
-    
-    # Count plugins
-    plugin_files = len(glob.glob(os.path.join(PLUGINS_DIR, "*.py")))
-    uploaded_files = len(glob.glob(os.path.join(UPLOADS_DIR, "*.py"))) if os.path.exists(UPLOADS_DIR) else 0
-    
-    # Bot uptime
-    uptime = "Unknown"
-    if bot_start_time:
-        uptime_delta = datetime.now() - bot_start_time
-        uptime = str(uptime_delta).split('.')[0]  # Remove microseconds
-    
-    stats_msg = f"""📊 **Bot Statistics**
-
-👥 **Users:**
-• Total Connected: {total_users}
-• Active Sessions: {active_users}
-• Inactive Sessions: {inactive_users}
-
-🔌 **Plugins:**
-• Plugin Files: {plugin_files}
-• Uploaded Files: {uploaded_files}
-
-🤖 **Bot Status:**
-• Status: {'Paused' if bot_paused else 'Running'}
-• Uptime: {uptime}
-• Admins: {len(ADMIN_USERS)}
-
-💾 **Files:**
-• Users File: {'✅' if os.path.exists(USERS_FILE) else '❌'}
-• Sessions Dir: {'✅' if os.path.exists('sessions') else '❌'}
-• Plugins Dir: {'✅' if os.path.exists(PLUGINS_DIR) else '❌'}"""
-    
-    await update.message.reply_text(stats_msg, parse_mode='Markdown')
-
-async def upload_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin command to upload plugin files"""
-    if not is_private_chat(update):
-        return
-    
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        await update.message.reply_text("❌ You don't have permission to use this command.")
-        return
-    
-    pending_uploads[user_id] = {"step": "waiting_file"}
-    await update.message.reply_text(
-        "📁 **Upload Plugin File**\n\n"
-        "Please send a Python (.py) file to add as a plugin.\n\n"
-        "⚠️ **Warning:** Make sure the plugin is safe and tested!",
-        parse_mode='Markdown'
-    )
-
-async def reload_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin command to reload plugins for all connected users"""
-    if not is_private_chat(update):
-        return
-    
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        await update.message.reply_text("❌ You don't have permission to use this command.")
-        return
-    
-    await update.message.reply_text("🔄 Reloading plugins for all connected users...")
-    
-    success_count = 0
-    error_count = 0
-    
-    for session_user_id, session in user_sessions.items():
-        if session.is_active and session.client:
-            try:
-                plugin_count = await session.reload_plugins()
-                success_count += 1
-                logger.info(f"Reloaded {plugin_count} plugins for user {session_user_id}")
-            except Exception as e:
-                error_count += 1
-                logger.error(f"Error reloading plugins for user {session_user_id}: {e}")
-    
-    result_msg = f"""✅ **Plugin Reload Complete**
-
-📊 **Results:**
-• Successful reloads: {success_count}
-• Failed reloads: {error_count}
-• Total active sessions: {len([s for s in user_sessions.values() if s.is_active])}
-
-🔌 All active users now have the latest plugins loaded!"""
-    
-    await update.message.reply_text(result_msg, parse_mode='Markdown')
-
-async def remove_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin command to remove uploaded plugin files"""
-    if not is_private_chat(update):
-        return
-    
-    user_id = update.effective_user.id
-    if not is_admin(user_id):
-        await update.message.reply_text("❌ You don't have permission to use this command.")
-        return
-    
-    # List available plugin files
-    plugin_files = []
-    if os.path.exists(PLUGINS_DIR):
-        plugin_files = [f for f in os.listdir(PLUGINS_DIR) if f.endswith('.py')]
-    
-    if not plugin_files:
-        await update.message.reply_text("❌ No plugin files found to remove.")
-        return
-    
-    # Show list of files
-    files_list = "\n".join([f"• {f}" for f in plugin_files])
-    await update.message.reply_text(
-        f"📋 **Available Plugin Files:**\n\n{files_list}\n\n"
-        f"Reply with the exact filename to remove (including .py extension):",
-        parse_mode='Markdown'
-    )
-    
-    pending_uploads[user_id] = {"step": "waiting_remove", "files": plugin_files}
-
 # Bot command handlers
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start command"""
@@ -395,18 +225,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
         
     user_id = update.effective_user.id
-    admin_commands = ""
     
-    if is_admin(user_id):
-        admin_commands = """
-🔧 **Admin Commands:**
-• `/stats` - View bot statistics
-• `/upload` - Upload plugin files
-• `/reload` - Reload plugins for all users
-• `/remove` - Remove plugin files
-"""
-    
-    welcome_msg = f"""🤖 **Multi-Session UserBot by Reiker**
+    welcome_msg = """🤖 **Multi-Session UserBot by Reiker**
 
 📝 **Available Commands:**
 • `/connect` - Connect your Telegram account
@@ -414,7 +234,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 • `/delete` - Delete your connection
 • `/health` - Check your connection status
 • `/pause` - Pause bot responses
-• `/restart` - Restart bot responses{admin_commands}
+• `/restart` - Restart bot responses
 
 🎯 **Features:**
 • Send `!ping` from your account to get `pong` response
@@ -562,9 +382,6 @@ async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             time_diff = datetime.now() - session.last_ping
             ping_status = f"Last ping: {time_diff.seconds}s ago"
         
-        # Count loaded plugins
-        plugin_count = len(session.plugins)
-        
         health_msg = f"""✅ **Connection Status: {'Healthy' if session.is_active else 'Inactive'}**
 
 👤 **Account:** {me.username or me.first_name}
@@ -574,7 +391,6 @@ async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 📊 **Status:**
 • Connection: {'Active' if session.is_active else 'Inactive'}
 • Bot Status: {'Paused' if bot_paused else 'Active'}
-• Loaded Plugins: {plugin_count}
 • {ping_status}
 
 🎯 **Test:** Send `!ping` from your account to test response"""
@@ -636,20 +452,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             parse_mode='Markdown'
         )
         return
-    
-    user_id = update.effective_user.id
-    admin_help = ""
-    
-    if is_admin(user_id):
-        admin_help = """
-🔧 **Admin Commands:**
-• `/stats` - View detailed bot statistics and user counts
-• `/upload` - Upload new plugin files to the bot
-• `/reload` - Reload all plugins for all connected users
-• `/remove` - Remove plugin files from the bot
-"""
         
-    help_msg = f"""🤖 **Multi-Session UserBot by Reiker - Help**
+    help_msg = """🤖 **Multi-Session UserBot by Reiker - Help**
 
 🔧 **Setup Commands:**
 • `/connect` - Connect your Telegram account
@@ -659,7 +463,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 ⚡ **Control Commands:**
 • `/pause` - Pause all bot responses
-• `/restart` - Resume bot responses{admin_help}
+• `/restart` - Resume bot responses
 
 🎯 **UserBot Features:**
 • Send `!ping` from your connected account to get `pong` response
@@ -671,7 +475,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 • Place Python files in `/plugins` folder
 • Plugins are automatically loaded for each session
 • Each plugin can add custom commands and handlers
-• Admins can upload and manage plugins remotely
 
 💡 **Tips:**
 • 🔒 Bot only works in private messages
@@ -685,96 +488,9 @@ Created by Reiker 🚀"""
     await send_long_message(update, context, help_msg)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle connection process messages, file uploads, and admin operations"""
+    """Handle connection process messages and file uploads"""
     if not is_private_chat(update):
         return  # Ignore in groups/channels
-    
-    user_id = update.effective_user.id
-    
-    # Handle admin upload process
-    if user_id in pending_uploads and is_admin(user_id):
-        step = pending_uploads[user_id]["step"]
-        
-        # Handle plugin file upload
-        if step == "waiting_file" and update.message.document:
-            document = update.message.document
-            if not document.file_name.endswith('.py'):
-                await update.message.reply_text("❌ Please send a valid Python (.py) file:")
-                return
-            
-            try:
-                # Create uploads directory
-                os.makedirs(UPLOADS_DIR, exist_ok=True)
-                
-                # Download file to uploads directory first
-                upload_path = os.path.join(UPLOADS_DIR, document.file_name)
-                file = await context.bot.get_file(document.file_id)
-                await file.download_to_drive(upload_path)
-                
-                # Copy to plugins directory
-                plugin_path = os.path.join(PLUGINS_DIR, document.file_name)
-                shutil.copy2(upload_path, plugin_path)
-                
-                del pending_uploads[user_id]
-                await update.message.reply_text(
-                    f"✅ **Plugin Uploaded Successfully!**\n\n"
-                    f"📁 **File:** {document.file_name}\n"
-                    f"📍 **Location:** plugins/{document.file_name}\n\n"
-                    f"🔄 Use `/reload` to apply to all connected users.",
-                    parse_mode='Markdown'
-                )
-                
-                logger.info(f"Admin {user_id} uploaded plugin: {document.file_name}")
-                
-            except Exception as e:
-                del pending_uploads[user_id]
-                await update.message.reply_text(f"❌ **Upload Error:** {str(e)}", parse_mode='Markdown')
-            
-            return
-        
-        # Handle plugin removal
-        elif step == "waiting_remove" and update.message.text:
-            filename = update.message.text.strip()
-            available_files = pending_uploads[user_id].get("files", [])
-            
-            if filename not in available_files:
-                await update.message.reply_text(f"❌ File '{filename}' not found. Please enter exact filename:")
-                return
-            
-            try:
-                # Remove from plugins directory
-                plugin_path = os.path.join(PLUGINS_DIR, filename)
-                if os.path.exists(plugin_path):
-                    os.remove(plugin_path)
-                
-                # Remove from uploads directory if exists
-                upload_path = os.path.join(UPLOADS_DIR, filename)
-                if os.path.exists(upload_path):
-                    os.remove(upload_path)
-                
-                # Remove plugin from all active sessions
-                plugin_name = filename[:-3]  # Remove .py extension
-                removed_count = 0
-                for session in user_sessions.values():
-                    if session.is_active and await session.remove_plugin(plugin_name):
-                        removed_count += 1
-                
-                del pending_uploads[user_id]
-                await update.message.reply_text(
-                    f"✅ **Plugin Removed Successfully!**\n\n"
-                    f"📁 **File:** {filename}\n"
-                    f"👥 **Unloaded from:** {removed_count} active sessions\n\n"
-                    f"🗑️ Plugin has been completely removed from the system.",
-                    parse_mode='Markdown'
-                )
-                
-                logger.info(f"Admin {user_id} removed plugin: {filename}")
-                
-            except Exception as e:
-                del pending_uploads[user_id]
-                await update.message.reply_text(f"❌ **Removal Error:** {str(e)}", parse_mode='Markdown')
-            
-            return
     
     # Check force join for connection process
     if not await check_force_join(update, context):
@@ -786,6 +502,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
         
+    user_id = update.effective_user.id
+    
     if user_id not in pending_connections:
         return
     
@@ -855,17 +573,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def post_init(application: Application) -> None:
     """Initialize user sessions after bot startup"""
-    global bot_start_time
-    bot_start_time = datetime.now()
-    
     print("🚀 Starting Multi-Session UserBot by Reiker...")
     
-    # Create necessary directories
-    directories = [PLUGINS_DIR, UPLOADS_DIR, "sessions"]
-    for directory in directories:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
-            print(f"📁 Created directory: {directory}")
+    # Create plugins directory if not exists
+    if not os.path.exists(PLUGINS_DIR):
+        os.makedirs(PLUGINS_DIR)
+        print(f"📁 Created plugins directory: {PLUGINS_DIR}")
     
     # Load existing users
     load_users()
@@ -881,12 +594,6 @@ async def post_init(application: Application) -> None:
                 print(f"❌ Failed to reconnect user {user_id}: {message}")
         except Exception as e:
             print(f"❌ Error reconnecting user {user_id}: {e}")
-    
-    # Print admin info
-    if ADMIN_USERS:
-        print(f"🔧 Admin users configured: {ADMIN_USERS}")
-    else:
-        print("⚠️  No admin users configured. Add ADMIN_USERS to .env file.")
     
     print("✅ Multi-Session UserBot by Reiker is running!")
 
@@ -905,12 +612,6 @@ def main() -> None:
         application.add_handler(CommandHandler("pause", pause_command))
         application.add_handler(CommandHandler("restart", restart_command))
         application.add_handler(CommandHandler("help", help_command))
-        
-        # Add admin command handlers
-        application.add_handler(CommandHandler("stats", stats_command))
-        application.add_handler(CommandHandler("upload", upload_command))
-        application.add_handler(CommandHandler("reload", reload_command))
-        application.add_handler(CommandHandler("remove", remove_command))
         
         # Add message handler for connection process and file uploads
         application.add_handler(MessageHandler(filters.TEXT | filters.Document.ALL, handle_message))
