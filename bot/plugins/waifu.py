@@ -10,7 +10,7 @@ async def setup(client, user_id):
     
     @client.on(events.NewMessage(pattern=r'^!waifu$', outgoing=True))
     async def waifu_handler(event):
-        # Show searching message (this will be edited later)
+        # Show searching message
         status_msg = await event.reply("🌸 Getting random waifu...")
 
         try:
@@ -29,11 +29,12 @@ async def setup(client, user_id):
             # Delete status message
             await status_msg.delete()
 
-            # Send image as a reply to the command message
+            # Send image as photo
             await event.client.send_file(
                 event.chat_id, 
                 image_bytes, 
-                reply_to=event.id
+                reply_to=event.id,
+                force_document=False  # ensures it's sent as an image
             )
 
         except:
