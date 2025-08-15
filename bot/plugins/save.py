@@ -1,7 +1,6 @@
 import re
 import os
 from telethon import events, functions
-from telethon.errors import RpcError
 
 async def setup(client, user_id):
     """Initialize the Save Story plugin"""
@@ -70,8 +69,6 @@ async def setup(client, user_id):
             else:
                 await event.reply("❌ Story not found or no access.")
 
-        except RpcError as e:
-            await event.reply(f"⚠ Telegram error: `{str(e)}`")
         except Exception as e:
             await event.reply(f"⚠ Failed: `{str(e)}`")
 
