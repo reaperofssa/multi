@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 async def resolve_pahe_link(pahe_url):
-    """Resolve Pahe download link to direct MP4 link"""
+    """Resolve Pahe download link to direct MP4 link, fallback to original if fails"""
     try:
         resolve_url = f"https://thdump-api.hf.space/resolvex?url={pahe_url}"
         response = requests.get(resolve_url, timeout=30)
@@ -21,16 +21,30 @@ async def resolve_pahe_link(pahe_url):
         if response.status_code == 200:
             data = response.json()
             mp4_link = data.get('mp4Link', '')
-            if mp4_link:
-                logger.info(f"Resolved Pahe link: {pahe_url} -> {mp4_link}")
+            if mp4_link and mp4_link.strip():  # Check if mp4Link is not empty
+                logger.info(f"✅ Successfully resolved Pahe link: {pahe_url} -> {mp4_link}")
                 return mp4_link
+            else:
+                logger.warning(f"⚠️ Empty mp4Link in response for: {pahe_url}")
+        else:
+            logger.warning(f"⚠️ API returned status {response.status_code} for: {pahe_url}")
         
-        logger.warning(f"Failed to resolve Pahe link: {pahe_url}")
-        return pahe_url  # Return original if resolution fails
+        # Fallback to original Pahe link
+        logger.info(f"🔄 Falling back to original Pahe link: {pahe_url}")
+        return pahe_url
         
+    except requests.exceptions.Timeout:
+        logger.warning(f"⏱️ Timeout resolving Pahe link, using original: {pahe_url}")
+        return pahe_url
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"🌐 Network error resolving Pahe link {pahe_url}: {e}, using original")
+        return pahe_url
+    except json.JSONDecodeError as e:
+        logger.warning(f"📄 JSON decode error for Pahe link {pahe_url}: {e}, using original")
+        return pahe_url
     except Exception as e:
-        logger.error(f"Error resolving Pahe link {pahe_url}: {e}")
-        return pahe_url  # Return original if error occurs
+        logger.error(f"❌ Unexpected error resolving Pahe link {pahe_url}: {e}, using original")
+        return pahe_url
 
 def is_pahe_link(url):
     """Check if URL is a Pahe download link"""
