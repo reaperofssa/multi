@@ -1,6 +1,6 @@
 import re
 import os
-from telethon import events, functions
+from telethon import events, functions, types
 
 async def setup(client, user_id):
     """Initialize the Save Story plugin"""
@@ -15,11 +15,14 @@ async def setup(client, user_id):
             # Case 1: Replying to a story
             if event.is_reply and not arg:
                 reply_msg = await event.get_reply_message()
-                if getattr(reply_msg, 'story', None):
-                    peer = await client.get_input_entity(reply_msg.sender_id)
-                    story_id = reply_msg.story.id
+                
+                # Check if the reply is a story reply
+                if isinstance(reply_msg.reply_to, types.MessageReplyStoryHeader):
+                    story_header = reply_msg.reply_to
+                    story_id = story_header.story_id
+                    peer = await client.get_input_entity(story_header.peer)
                 else:
-                    await event.reply("❌ That’s not a story message.")
+                    await event.reply("❌ That’s not a story reply.")
                     return
 
             # Case 2: Story link provided
@@ -73,6 +76,3 @@ async def setup(client, user_id):
             await event.reply(f"⚠ Failed: `{str(e)}`")
 
     print(f"✅ Save Story plugin loaded for user {user_id}")
-
-async def init_plugin(client, user_id):
-    await setup(client, user_id)
