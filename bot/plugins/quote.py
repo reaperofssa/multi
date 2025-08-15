@@ -10,7 +10,7 @@ from telethon import events
 async def setup(client, user_id):
     """Initialize the quote plugin"""
 
-    @client.on(events.NewMessage(pattern=r'^!quote', outgoing=True))
+    @client.on(events.NewMessage(pattern=r'^!xquote', outgoing=True))
     async def quote_handler(event):
         """Handle !quote command"""
         try:
