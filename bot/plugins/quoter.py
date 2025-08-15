@@ -5,6 +5,7 @@ Generates quote images and sends them as stickers
 """
 import requests
 from telethon import events
+from telethon.tl.types import DocumentAttributeSticker
 import urllib.parse
 import io
 import secrets
@@ -110,14 +111,17 @@ async def setup(client, user_id):
                 
                 # Create a file-like object from the image data
                 image_bytes = io.BytesIO(response.content)
-                image_bytes.name = f"quote_{random_hex}.png"
+                image_bytes.name = f"quote_{random_hex}.webp"
                 
-                # Send the image as a sticker (reply to the command message)
+                # Send as sticker
                 await client.send_file(
                     event.chat_id,
                     image_bytes,
                     reply_to=event.id,
-                    force_document=False
+                    attributes=[DocumentAttributeSticker(
+                        alt="Quote",
+                        stickerset=None
+                    )]
                 )
                 
                 # Delete the generating message
