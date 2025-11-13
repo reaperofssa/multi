@@ -5,7 +5,7 @@ async def setup(client, user_id):
     @client.on(events.NewMessage(pattern=r'^!purge$', outgoing=True))
     async def purge_warning(event):
         await event.reply(
-            "⚠️ This will delete your last 100 messages in this chat.\n"
+            "⚠️ This will delete your last 150 messages in this chat.\n"
             "If you’re sure, type:\n`!purge yes delete`"
         )
 
@@ -16,7 +16,7 @@ async def setup(client, user_id):
 
         await event.delete()  # remove the command message
 
-        async for msg in client.iter_messages(chat_id, from_user='me', limit=100):
+        async for msg in client.iter_messages(chat_id, from_user='me', limit=150):
             try:
                 await msg.delete()
                 deleted_count += 1
