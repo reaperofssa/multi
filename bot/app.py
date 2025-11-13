@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 # Load bot credentials
 load_dotenv()
-BOT_TOKEN = "8404252429:AAFOUvXmMxf2K-4VHOarvdHZW2AjfSxBC-c"
+BOT_TOKEN = "8404252429:AAECPox9bLFh2ORbVJEczUHVhoeanvcmR4E"
 FORCE_JOIN_CHANNEL = "@ReikerX"  # Replace with your actual channel username
 
 # Validate BOT_TOKEN
